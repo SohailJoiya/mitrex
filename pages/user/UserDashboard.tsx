@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, ProfitHistoryItem } from '../../types';
+import { User, ProfitHistoryItem, DailyClaim } from '../../types';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import api from '../../services/api';
@@ -44,7 +44,7 @@ const AnimatedNumber: React.FC<{
 
 const StatCard: React.FC<{ title: string; value: string | number; icon?: React.ReactNode }> = ({ title, value, icon }) => {
   const isCurrency = title.toLowerCase().includes('profit') ||
-                     title.toLowerCase().includes('invested') ||
+                     title.toLowerCase().includes('investment') ||
                      title.toLowerCase().includes('withdrawal') ||
                      title.toLowerCase().includes('balance');
   
@@ -80,45 +80,47 @@ const ShareIcon: React.FC<{ path: string }> = ({ path }) => (
 interface UserDashboardProps {
   user: User;
   onNavigate: (page: 'deposit' | 'withdraw') => void;
+  dailyClaim: DailyClaim | null;
+  onClaimSuccess: () => Promise<void>;
 }
 
-const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
+const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate, dailyClaim, onClaimSuccess }) => {
   const [copiedReferral, setCopiedReferral] = React.useState(false);
-  const [isProfitClaimed, setIsProfitClaimed] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
   const shareContainerRef = useRef<HTMLDivElement>(null);
   const [profitHistory, setProfitHistory] = useState<ProfitHistoryItem[]>(user.profitHistory);
-  const [fin2xRate, setFin2xRate] = useState(0.50);
+  const [countdown, setCountdown] = useState('');
 
-  const referralLink = `https://FIN2X.earn/ref/${user.referralCode}`;
-
-  useEffect(() => {
-    const fetchSystemData = async () => {
-      try {
-        const response: { fin2xRate: number } = await api.get('/api/system/public/settings', true); 
-        if (response.fin2xRate) {
-          setFin2xRate(response.fin2xRate);
-        }
-      } catch (error) {
-        console.error("Failed to fetch FIN2X rate:", error);
-      }
-    };
-    fetchSystemData();
-  }, []);
+  const referralLink = user.referralLink || `https://flareautoearning.com/ref/${user.referralCode}`;
 
   useEffect(() => {
-    const fetchProfitHistory = async () => {
-      try {
-        const response: any = await api.get('/api/profit/history');
-        setProfitHistory(response.results || response || []);
-      } catch (error) {
-        console.error("Failed to fetch profit history:", error);
-      }
-    };
-    fetchProfitHistory();
-  }, []);
+    setProfitHistory(user.profitHistory);
+  }, [user.profitHistory]);
+
+  useEffect(() => {
+    if (dailyClaim && !dailyClaim.eligible && dailyClaim.nextClaimAt) {
+        const interval = setInterval(() => {
+            const now = new Date().getTime();
+            const nextClaimTime = new Date(dailyClaim.nextClaimAt).getTime();
+            const distance = nextClaimTime - now;
+
+            if (distance < 0) {
+                setCountdown('Ready to claim!');
+                clearInterval(interval);
+                return;
+            }
+
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            setCountdown(`${hours}h ${minutes}m ${seconds}s`);
+        }, 1000);
+        return () => clearInterval(interval);
+    }
+  }, [dailyClaim]);
 
   const copyReferralLink = () => {
     navigator.clipboard.writeText(referralLink);
@@ -129,10 +131,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
   const handleClaimProfit = async () => {
     try {
         await api.post('/api/profit/claim-daily', {});
-        setIsProfitClaimed(true);
         setClaimMessage(`Congratulations! Your daily profit has been claimed.`);
-        // Note: In a real app, you might want to trigger a global user state refresh
-        // to update the wallet balance across the app immediately.
+        await onClaimSuccess();
     } catch (err: any) {
         setClaimMessage(err.message || 'Failed to claim profit.');
     } finally {
@@ -152,13 +152,13 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
     };
   }, []);
 
-  const shareText = `Join me on FIN2X and start earning! Use my referral link to sign up:`;
+  const shareText = `Join me on Flare Auto Earning and start earning! Use my referral link to sign up:`;
   const shareOptions = [
     { name: 'WhatsApp', icon: <ShareIcon path="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.62 15.35 3.52 16.84L2.25 21.75L7.33 20.52C8.75 21.36 10.36 21.82 12.04 21.82C17.5 21.82 21.95 17.37 21.95 11.91C21.95 6.45 17.5 2 12.04 2M12.04 3.67C16.56 3.67 20.28 7.39 20.28 11.91C20.28 16.43 16.56 20.15 12.04 20.15C10.48 20.15 8.99 19.72 7.73 18.96L7.33 18.72L4.39 19.57L5.27 16.71L5.02 16.31C4.18 14.97 3.8 13.47 3.8 11.91C3.8 7.39 7.52 3.67 12.04 3.67M9.13 7.5C8.91 7.5 8.7 7.58 8.54 7.82C8.38 8.06 7.83 8.67 7.83 9.81C7.83 10.95 8.56 12.04 8.7 12.22C8.84 12.4 10.41 14.82 12.83 15.76C15.25 16.7 15.65 16.53 16.01 16.49C16.37 16.45 17.32 15.9 17.51 15.31C17.7 14.72 17.7 14.23 17.61 14.13C17.52 14.03 17.33 13.97 17.08 13.85C16.83 13.73 15.65 13.16 15.41 13.06C15.17 12.96 15.01 12.91 14.85 13.16C14.69 13.4 14.18 13.97 14.03 14.13C13.88 14.29 13.73 14.33 13.48 14.21C13.23 14.09 12.24 13.76 11.08 12.74C10.16 11.95 9.53 11.01 9.39 10.77C9.25 10.53 9.38 10.4 9.51 10.27C9.62 10.16 9.77 9.97 9.92 9.81C10.07 9.65 10.12 9.54 10.22 9.35C10.32 9.15 10.27 8.99 10.2 8.87C10.13 8.75 9.61 7.5 9.39 7.5" />, url: `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}%20${encodeURIComponent(referralLink)}` },
     { name: 'Facebook', icon: <ShareIcon path="M17 2H14C11.24 2 9 4.24 9 7V10H6V14H9V22H13V14H16L17 10H13V7C13 6.45 13.45 6 14 6H17V2Z" />, url: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(referralLink)}` },
     { name: 'Twitter', icon: <ShareIcon path="M22.46 6c-.77.35-1.6.58-2.46.69.88-.53 1.56-1.37 1.88-2.38-.83.5-1.75.85-2.72 1.05C18.37 4.5 17.26 4 16 4c-2.35 0-4.27 1.92-4.27 4.29 0 .34.04.67.11.98-3.56-.18-6.73-1.89-8.84-4.48-.37.63-.58 1.37-.58 2.15 0 1.49.75 2.81 1.91 3.56-.71 0-1.37-.22-1.95-.55v.03c0 2.08 1.48 3.82 3.44 4.21a4.22 4.22 0 0 1-1.94.07 4.28 4.28 0 0 0 4 2.98 8.521 8.521 0 0 1-5.33 1.84c-.34 0-.68-.02-1.01-.06C3.43 18.5 5.66 19.5 8.14 19.5c5.64 0 8.73-4.67 8.73-8.73 0-.13 0-.26-.01-.39.6-.43 1.12-.98 1.54-1.6z" />, url: `https://twitter.com/intent/tweet?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}` },
     { name: 'Telegram', icon: <ShareIcon path="M11.95 14.94l.46-2.25-2.32.99-2.2-1.03 8.1-3.41c.64-.26.23.1.02.26l-6.1 5.46-1.77 5.43c.27-.05.51-.17.7-.33l1.9-1.82 3.84 2.82c.4.23.83.12 1-.29l2.4-11.4c.23-.9-.45-1.38-1.12-1.12l-12.8 4.94c-.9.34-.89.88-.14 1.1l3.23.99 7.4-4.66c.35-.22.67-.1.39.18" />, url: `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}` },
-    { name: 'Email', icon: <ShareIcon path="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />, url: `mailto:?subject=${encodeURIComponent('Invitation to join FIN2X')}&body=${encodeURIComponent(shareText)}%20${encodeURIComponent(referralLink)}` },
+    { name: 'Email', icon: <ShareIcon path="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />, url: `mailto:?subject=${encodeURIComponent('Invitation to join Flare Auto Earning')}&body=${encodeURIComponent(shareText)}%20${encodeURIComponent(referralLink)}` },
   ];
   
   const copyShareLink = () => {
@@ -187,7 +187,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
         <Card>
           <h2 className="text-2xl font-bold text-white mb-2">Referral Link</h2>
           <div className="flex items-center bg-gray-800 rounded-md p-2 border border-gray-600">
-            <input type="text" readOnly value={`https://FIN2X.earn/ref/${user.referralCode}`} className="bg-transparent text-sm text-gray-300 w-full focus:outline-none"/>
+            <input type="text" readOnly value={referralLink} className="bg-transparent text-sm text-gray-300 w-full focus:outline-none"/>
             <button onClick={copyReferralLink} className="ml-2 px-3 py-1 bg-brand-orange text-white rounded text-sm">
               {copiedReferral ? 'Copied!' : 'Copy'}
             </button>
@@ -202,6 +202,13 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
           <div className="flex-grow text-center md:text-left">
             <h2 className="text-2xl font-bold text-white">Claim Your Daily Profit</h2>
             {claimMessage && <p className="text-sm text-green-400 mt-2 transition-opacity duration-300">{claimMessage}</p>}
+            {user.walletBalance < 35 ? (
+              <p className="text-sm text-yellow-500 mt-1">Your wallet balance must be at least $35 to claim the bonus.</p>
+            ) : (
+              !dailyClaim?.eligible && countdown && (
+                <p className="text-sm text-gray-400 mt-1">Next claim in: <span className="font-semibold text-gray-300">{countdown}</span></p>
+              )
+            )}
           </div>
           <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-4">
             <img 
@@ -211,10 +218,10 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
             />
             <Button 
               onClick={handleClaimProfit} 
-              disabled={isProfitClaimed}
+              disabled={!dailyClaim?.eligible || user.walletBalance < 35}
               className="w-full sm:w-auto flex-shrink-0 disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none"
             >
-              {isProfitClaimed ? 'Claimed for Today' : 'Claim Now'}
+              {dailyClaim?.eligible ? 'Claim Now' : 'Claimed for Today'}
             </Button>
           </div>
         </div>
@@ -313,11 +320,10 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigate }) => {
       {/* Network Stats Section */}
       <div>
         <h2 className="text-2xl font-semibold text-white mb-4">Network Stats</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <StatCard title="Team Size" value={user.teamSize} />
           <StatCard title="Withdrawal" value={user.totalWithdrawal} />
           <StatCard title="Investment" value={user.totalInvested} />
-          <StatCard title="FIN2X Rate" value={fin2xRate} />
         </div>
       </div>
       

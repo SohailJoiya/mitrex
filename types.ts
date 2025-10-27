@@ -21,7 +21,7 @@ export interface ReferredUser {
   name: string;
   joinDate: string;
   status: 'Active' | 'Pending';
-  investment: number;
+  balance: number;
 }
 
 export interface CommissionHistoryItem {
@@ -37,7 +37,9 @@ export interface TeamMember {
   joinDate: string;
   status: 'Active' | 'Pending';
   investment: number;
-  level: number;
+  level?: number;
+  directCount?: number;
+  indirectCount?: number;
 }
 
 export interface User {
@@ -48,6 +50,7 @@ export interface User {
   phone: string;
   role: UserRole;
   referralCode: string;
+  referralLink?: string;
   referredBy?: string;
   walletBalance: number;
   totalInvested: number;
@@ -79,7 +82,10 @@ export interface WithdrawalRequest {
   id: string;
   userId: string;
   userEmail: string;
+  userName?: string;
+  userWalletBalance?: number;
   amount: number;
+  receivedAmount: number;
   walletName: string;
   walletAddress: string;
   network: string;
@@ -112,4 +118,20 @@ export interface Notification {
 export interface LoginResponse {
     token: string;
     user: User;
+}
+
+export interface DailyClaim {
+  eligible: boolean;
+  amount: number;
+  nextClaimAt: string;
+}
+
+export interface MonthlyReward {
+  month: string;
+  totalInvestment: number;
+  teamInvestment: number;
+  achievedTier: string;
+  rewardAmount: number;
+  isClaimed: boolean;
+  progressSum: number;
 }

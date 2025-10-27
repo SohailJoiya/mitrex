@@ -1,12 +1,7 @@
 import React from 'react';
 import Card from '../../components/Card';
 import { User } from '../../types';
-
-const Icon = ({ path, className }: { path: string; className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={`h-8 w-8 ${className}`} fill="none" viewBox="0 0 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d={path} />
-  </svg>
-);
+import Icon from '../../components/Icon';
 
 interface RewardTier {
   target: number;
@@ -114,14 +109,14 @@ const RanksAndRewardsPage: React.FC<RanksAndRewardsPageProps> = ({ user }) => {
                             
                             <div className="space-y-4 my-auto">
                                 <div className="flex items-center space-x-4">
-                                    <Icon path="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" className={tier.theme.textColor} />
+                                    <Icon path="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" className={`h-8 w-8 ${tier.theme.textColor}`} strokeWidth={1.5} />
                                     <div>
                                         <p className="text-sm opacity-80">Monthly Team Investment</p>
                                         <p className="font-bold text-xl">${tier.target.toLocaleString()}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-4">
-                                    <Icon path="M13 10V3L4 14h7v7l9-11h-7z" className={tier.theme.textColor} />
+                                    <Icon path="M13 10V3L4 14h7v7l9-11h-7z" className={`h-8 w-8 ${tier.theme.textColor}`} strokeWidth={1.5} />
                                     <div>
                                         <p className="text-sm opacity-80">Reward</p>
                                         <p className="font-bold text-xl">${tier.reward.toLocaleString()}</p>

@@ -1,15 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, UserRole, DepositRequest, RequestStatus, Notification, WithdrawalRequest, LoginResponse } from './types';
-import LandingPage from './pages/LandingPage';
-import LoginPage from './pages/LoginPage';
-import SignupPage from './pages/SignupPage';
-import UserApp from './pages/user/UserApp';
-import AdminApp from './pages/admin/AdminApp';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import OtpVerificationPage from './pages/OtpVerificationPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
-import api from './services/api';
-import { processUser, processDepositRequest, processWithdrawalRequest, processNotification } from './processors';
+import { User, UserRole, DepositRequest, RequestStatus, Notification, WithdrawalRequest, LoginResponse, DailyClaim, MonthlyReward } from '../../types';
+import LandingPage from '../LandingPage';
+import LoginPage from '../LoginPage';
+import SignupPage from '../SignupPage';
+import UserApp from '../user/UserApp';
+import AdminApp from './AdminApp';
+import ForgotPasswordPage from '../ForgotPasswordPage';
+import OtpVerificationPage from '../OtpVerificationPage';
+import ResetPasswordPage from '../ResetPasswordPage';
+import api from '../../services/api';
+import { processUser, processDepositRequest, processWithdrawalRequest, processNotification, processDashboardData } from '../../processors';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21,6 +21,21 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [referralCodeFromUrl, setReferralCodeFromUrl] = useState<string | null>(null);
+  const [dailyClaim, setDailyClaim] = useState<DailyClaim | null>(null);
+  const [monthlyReward, setMonthlyReward] = useState<MonthlyReward | null>(null);
+
+  const refetchDashboardData = async () => {
+    try {
+        const dashboardData: any = await api.get('/api/dashboard');
+        const { user, notifications, dailyClaim, monthlyReward } = processDashboardData(dashboardData);
+        setCurrentUser(user);
+        setNotifications(notifications);
+        setDailyClaim(dailyClaim);
+        setMonthlyReward(monthlyReward);
+    } catch (error) {
+         console.error("Failed to refetch dashboard data:", error);
+    }
+  };
 
   useEffect(() => {
     const checkUserStatus = async () => {
@@ -48,8 +63,10 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currentUser?.role === UserRole.ADMIN) {
-        const fetchAdminData = async () => {
+    if (!currentUser) return;
+
+    const fetchData = async () => {
+        if (currentUser.role === UserRole.ADMIN) {
             try {
                 const [usersResponse, depositsResponse, withdrawalsResponse, notificationsResponse]: any[] = await Promise.all([
                     api.get('/api/admin/users'),
@@ -69,21 +86,14 @@ const App: React.FC = () => {
                 setWithdrawalRequests([]);
                 setNotifications([]);
             }
-        };
-        fetchAdminData();
-    } else if (currentUser) {
-      const fetchUserNotifications = async () => {
-          try {
-              const notificationsData: any = await api.get('/api/notifications');
-              const rawNotifications = notificationsData.results || notificationsData || [];
-              setNotifications(rawNotifications.map(processNotification));
-          } catch (error) {
-               console.error("Failed to fetch notifications:", error);
-          }
-      };
-      fetchUserNotifications();
-    }
-  }, [currentUser]);
+        } else if (currentUser.role === UserRole.USER) {
+          await refetchDashboardData();
+        }
+    };
+    
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
 
 
   const userNotifications = useMemo(() => {
@@ -149,7 +159,12 @@ const App: React.FC = () => {
 
   const addWithdrawalRequest = async (data: { amount: number; walletAddress: string; walletName: string; network: string; }) => {
     if (!currentUser) return;
-    const payload = { amount: data.amount, destinationAddress: data.walletAddress, walletName: data.walletName, network: data.network };
+    const payload = { 
+      amount: data.amount, 
+      destinationAddress: data.walletAddress, 
+      walletName: data.walletName, 
+      network: data.network 
+    };
     await api.post<any>('/api/withdrawals', payload);
   };
 
@@ -255,6 +270,9 @@ const App: React.FC = () => {
     notifications={userNotifications}
     onAddWithdrawalRequest={addWithdrawalRequest}
     onNotificationRead={handleNotificationRead}
+    dailyClaim={dailyClaim}
+    monthlyReward={monthlyReward}
+    onRefetchData={refetchDashboardData}
   />;
 };
 

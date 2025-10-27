@@ -25,6 +25,13 @@ const StatusBadge: React.FC<{ status: RequestStatus }> = ({ status }) => {
   );
 };
 
+interface WithdrawalConfig {
+  standardFeePercentage: number;
+  highBalanceFeePercentage: number;
+  highBalanceThreshold: number;
+  minimumWithdrawal: number;
+}
+
 const ITEMS_PER_PAGE = 5;
 
 const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance, onNavigate }) => {
@@ -40,17 +47,37 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
   const [feePercentage, setFeePercentage] = useState(0);
   const [netWithdrawal, setNetWithdrawal] = useState(0);
   const [remainingBalance, setRemainingBalance] = useState(walletBalance);
+  const [config, setConfig] = useState<WithdrawalConfig | null>(null);
 
   // State for withdrawal history list
   const [allWithdrawals, setAllWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [isListLoading, setIsListLoading] = useState(true);
+  
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await api.get<WithdrawalConfig>('/api/system/public/withdrawal-config', true);
+        setConfig(response);
+      } catch (e) {
+        console.error("Failed to fetch withdrawal config:", e);
+        setConfig({
+          standardFeePercentage: 6,
+          highBalanceFeePercentage: 20,
+          highBalanceThreshold: 0.8,
+          minimumWithdrawal: 35,
+        });
+      }
+    };
+    fetchConfig();
+  }, []);
 
   const fetchWithdrawals = useCallback(async () => {
     setIsListLoading(true);
     try {
-      const response: any = await api.get('/api/admin/withdrawals');
-      const processedWithdrawals = (response.results || []).map(processWithdrawalRequest);
+      const response: any = await api.get('/api/withdrawals');
+      const responseData = response.results || response || [];
+      const processedWithdrawals = (Array.isArray(responseData) ? responseData : []).map(processWithdrawalRequest);
       // Sort by date descending (YYYY-MM-DD string sort works)
       setAllWithdrawals(processedWithdrawals.sort((a, b) => b.date.localeCompare(a.date)));
     } catch (error) {
@@ -72,32 +99,39 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
     return allWithdrawals.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   }, [allWithdrawals, currentPage]);
 
+  const pendingWithdrawalsAmount = useMemo(() => {
+    return allWithdrawals
+      .filter(w => w.status === RequestStatus.PENDING)
+      .reduce((sum, w) => sum + w.amount, 0);
+  }, [allWithdrawals]);
+
+  const availableBalance = useMemo(() => Math.max(0, walletBalance - pendingWithdrawalsAmount), [walletBalance, pendingWithdrawalsAmount]);
+
 
   useEffect(() => {
     const numericAmount = parseFloat(amount);
 
-    if (isNaN(numericAmount) || numericAmount <= 0) {
+    if (!config || isNaN(numericAmount) || numericAmount <= 0) {
         setFee(0);
         setNetWithdrawal(0);
-        setFeePercentage(6);
-        setRemainingBalance(walletBalance);
+        setFeePercentage(config?.standardFeePercentage || 0);
+        setRemainingBalance(availableBalance);
         return;
     }
 
-    const calculatedRemaining = walletBalance - numericAmount;
+    const calculatedRemaining = availableBalance - numericAmount;
     setRemainingBalance(calculatedRemaining >= 0 ? calculatedRemaining : 0);
 
-    if (numericAmount > walletBalance) {
+    if (numericAmount > availableBalance) {
         setFee(0);
         setNetWithdrawal(numericAmount);
-        setFeePercentage(6);
+        setFeePercentage(config.standardFeePercentage);
         return;
     }
 
-    let currentFeePercentage = 6;
-    // Check if the withdrawal amount is greater than 80% of the wallet balance.
-    if (numericAmount > walletBalance * 0.8 && numericAmount > 0) {
-        currentFeePercentage = 20;
+    let currentFeePercentage = config.standardFeePercentage;
+    if (numericAmount > availableBalance * config.highBalanceThreshold && numericAmount > 0) {
+        currentFeePercentage = config.highBalanceFeePercentage;
     }
 
     const calculatedFee = (numericAmount * currentFeePercentage) / 100;
@@ -106,7 +140,7 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
     setFeePercentage(currentFeePercentage);
     setFee(calculatedFee);
     setNetWithdrawal(calculatedNet > 0 ? calculatedNet : 0);
-  }, [amount, walletBalance]);
+  }, [amount, availableBalance, config]);
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -116,12 +150,12 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
       setError('Please enter a valid amount.');
       return;
     }
-    if (numericAmount < 35) {
-        setError('Minimum withdrawal amount is $35.');
+    if (numericAmount < (config?.minimumWithdrawal || 35)) {
+        setError(`Minimum withdrawal amount is $${config?.minimumWithdrawal || 35}.`);
         return;
     }
-    if (numericAmount > walletBalance) {
-        setError('Withdrawal amount cannot exceed your wallet balance.');
+    if (numericAmount > availableBalance) {
+        setError('Withdrawal amount cannot exceed your available balance.');
         return;
     }
     if (!walletName.trim()) {
@@ -157,6 +191,10 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
     }
   };
 
+  const tooltipText = config 
+    ? `A ${config.standardFeePercentage}% fee is applied for international transactions. Withdrawals over ${config.highBalanceThreshold * 100}% of your balance incur a ${config.highBalanceFeePercentage}% fee.`
+    : "Loading fee details...";
+
   return (
     <div className="space-y-12">
         <div className="max-w-2xl mx-auto">
@@ -168,9 +206,17 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
             </div>
 
             <Card className="mt-8">
-                <div className="flex justify-between items-center mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                    <span className="text-gray-400">{remainingBalance !== walletBalance ? 'Remaining Balance' : 'Available Balance'}</span>
-                    <span className="text-2xl font-bold text-brand-orange">${remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                    <div className="flex justify-between items-center">
+                        <span className="text-gray-400">{amount ? 'Remaining Balance' : 'Available for Withdrawal'}</span>
+                        <span className="text-2xl font-bold text-brand-orange">${(amount ? remainingBalance : availableBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    {pendingWithdrawalsAmount > 0 && (
+                        <div className="text-right text-xs text-yellow-500 mt-1">
+                            Total Balance: ${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br />
+                            Pending Withdrawals: -${pendingWithdrawalsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                    )}
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -183,7 +229,7 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
                         required
                         placeholder="e.g., 100"
                         step="0.01"
-                        min="35"
+                        min={config?.minimumWithdrawal || 35}
                         disabled={isLoading}
                     />
                     
@@ -199,7 +245,7 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               <div className="absolute bottom-full mb-2 w-max px-3 py-1.5 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none left-1/2 -translate-x-1/2 border border-gray-600 shadow-lg z-10">
-                                A 6% fee is applied for international transactions. Withdrawals over 80% of your balance incur a 20% fee.
+                                {tooltipText}
                               </div>
                             </div>
                             <span className="font-medium text-red-400">-${fee.toFixed(2)}</span>
@@ -247,14 +293,14 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
                     {error && <p className="text-sm text-red-500 text-center">{error}</p>}
                     {submitted && <p className="text-green-400 text-sm text-center">Your withdrawal request was submitted successfully!</p>}
                     
-                    <Button type="submit" variant="primary" className="w-full" disabled={isLoading}>
+                    <Button type="submit" variant="primary" className="w-full" disabled={isLoading || !config}>
                         {isLoading ? 'Submitting...' : 'Submit Request'}
                     </Button>
                 </form>
             </Card>
         </div>
 
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl font-bold text-white mb-4">Withdrawal History</h2>
             <Card>
                 <div className="overflow-x-auto">
@@ -262,7 +308,8 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
                     <thead>
                         <tr className="border-b border-gray-700">
                         <th className="p-4 text-sm font-semibold text-gray-400">Date</th>
-                        <th className="p-4 text-sm font-semibold text-gray-400">Amount</th>
+                        <th className="p-4 text-sm font-semibold text-gray-400">Request Amount</th>
+                        <th className="p-4 text-sm font-semibold text-gray-400">You Received</th>
                         <th className="p-4 text-sm font-semibold text-gray-400">Wallet Name</th>
                         <th className="p-4 text-sm font-semibold text-gray-400">Network</th>
                         <th className="p-4 text-sm font-semibold text-gray-400">Address</th>
@@ -272,13 +319,14 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
                     <tbody>
                         {isListLoading ? (
                         <tr>
-                            <td colSpan={6} className="text-center p-8 text-gray-500">Loading history...</td>
+                            <td colSpan={7} className="text-center p-8 text-gray-500">Loading history...</td>
                         </tr>
                         ) : withdrawals.length > 0 ? (
                         withdrawals.map((req) => (
                             <tr key={req.id} className="border-b border-gray-800 hover:bg-gray-800">
                                 <td className="p-4 text-sm text-gray-300 whitespace-nowrap">{req.date}</td>
                                 <td className="p-4 font-semibold">${req.amount.toLocaleString()}</td>
+                                <td className="p-4 font-semibold text-green-400">${req.receivedAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="p-4">{req.walletName}</td>
                                 <td className="p-4">{req.network}</td>
                                 <td className="p-4 font-mono text-xs truncate max-w-[150px]">{req.walletAddress}</td>
@@ -287,7 +335,7 @@ const WithdrawPage: React.FC<WithdrawPageProps> = ({ onAddRequest, walletBalance
                         ))
                         ) : (
                         <tr>
-                            <td colSpan={6} className="text-center p-8 text-gray-500">
+                            <td colSpan={7} className="text-center p-8 text-gray-500">
                             No withdrawal history found.
                             </td>
                         </tr>

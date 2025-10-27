@@ -6,12 +6,14 @@ import AllUsersPage from './AllUsersPage';
 import DepositRequestsPage from './DepositRequestsPage';
 import NotificationsPage from './NotificationsPage';
 import WithdrawRequestsPage from './WithdrawRequestsPage';
+import Icon from '../../components/Icon';
 
 interface AdminAppProps {
   user: User;
   users: User[];
   requests: DepositRequest[];
   withdrawalRequests: WithdrawalRequest[];
+  // FIX: Add missing 'notifications' prop to align with usage in App.tsx and the component itself.
   notifications: Notification[];
   // FIX: Updated function signatures to return Promise<void> to match async handlers.
   onUpdateRequestStatus: (id: string, status: 'approved' | 'declined', data?: { reason: string }) => Promise<void>;
@@ -25,12 +27,6 @@ interface AdminAppProps {
 type AdminPage = 'dashboard' | 'users' | 'deposits' | 'withdrawals' | 'notifications';
 type UserFilter = 'all' | 'active' | 'inactive';
 type RequestFilter = 'all' | RequestStatus;
-
-const Icon = ({ path, className }: { path: string, className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${className}`} fill="none" viewBox="0 0 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d={path} />
-    </svg>
-);
 
 const AdminApp: React.FC<AdminAppProps> = ({ 
     user, 
@@ -78,11 +74,11 @@ const AdminApp: React.FC<AdminAppProps> = ({
       case 'dashboard':
         return <AdminDashboard requests={requests} withdrawalRequests={withdrawalRequests} users={users} onNavigate={handleNavigation} />;
       case 'users':
-        return <AllUsersPage users={users} initialFilter={initialUserFilter} />;
+        return <AllUsersPage initialFilter={initialUserFilter} />;
       case 'deposits':
         return <DepositRequestsPage users={users} onUpdateRequestStatus={onUpdateRequestStatus} onAddNotification={onAddNotification} initialFilter={initialDepositFilter} />;
       case 'withdrawals':
-        return <WithdrawRequestsPage requests={withdrawalRequests} users={users} onUpdateRequestStatus={onUpdateWithdrawalRequestStatus} onAddNotification={onAddNotification} initialFilter={initialWithdrawalFilter} />;
+        return <WithdrawRequestsPage users={users} onUpdateRequestStatus={onUpdateWithdrawalRequestStatus} onAddNotification={onAddNotification} initialFilter={initialWithdrawalFilter} />;
       case 'notifications':
         return <NotificationsPage 
             notifications={notifications}
@@ -102,7 +98,7 @@ const AdminApp: React.FC<AdminAppProps> = ({
         <nav className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <span className="font-bold text-xl text-white">FIN2X <span className="text-brand-orange">Admin</span></span>
+              <button onClick={() => handleNavigation('dashboard')} className="font-bold text-xl text-white focus:outline-none transition-opacity hover:opacity-80">FAEARING <span className="text-brand-orange">Admin</span></button>
               <div className="hidden md:block">
                 <div className="ml-10 flex items-baseline space-x-4">
                   {navItems.map((item) => (

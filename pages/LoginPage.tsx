@@ -9,7 +9,7 @@ interface LoginPageProps {
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onNavigate }) => {
-  const [email, setEmail] = React.useState('john@example.com');
+  const [email, setEmail] = React.useState('user@example.com');
   const [password, setPassword] = React.useState('123456');
   const [error, setError] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
@@ -32,7 +32,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onNavigate }) => {
     <div className="min-h-screen flex items-center justify-center bg-brand-dark p-4">
       <Card className="w-full max-w-md">
         <h2 className="text-3xl font-bold text-center text-white mb-6">
-          Log In to <span className="text-brand-orange">FIN2X</span>
+          Log In to <span className="text-brand-orange">FAEARING</span>
         </h2>
         <form onSubmit={handleLogin} className="space-y-6">
           <Input 

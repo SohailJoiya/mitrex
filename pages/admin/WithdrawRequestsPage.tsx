@@ -1,13 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { WithdrawalRequest, RequestStatus, User } from '../../types';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import DeclineRequestModal from '../../components/DeclineRequestModal';
+import api from '../../services/api';
+import { processWithdrawalRequest } from '../../processors';
 
 interface WithdrawRequestsPageProps {
-  requests: WithdrawalRequest[];
   users: User[];
-  // FIX: Updated to expect a Promise<void> to handle async operations correctly.
   onUpdateRequestStatus: (id: string, status: 'approved' | 'declined', data?: { reason: string }) => Promise<void>;
   onAddNotification: (data: { title: string; content: string; userId?: string }) => void;
   initialFilter?: FilterStatus;
@@ -87,23 +87,70 @@ const StatusBadge: React.FC<{ status: RequestStatus }> = ({ status }) => {
   );
 };
 
-const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, users, onUpdateRequestStatus, onAddNotification, initialFilter = 'all' }) => {
+const ITEMS_PER_PAGE = 10;
+
+const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ users, onUpdateRequestStatus, onAddNotification, initialFilter = 'all' }) => {
   const [filter, setFilter] = useState<FilterStatus>(initialFilter);
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [isDeclineModalOpen, setIsDeclineModalOpen] = useState(false);
   const [isWalletInfoModalOpen, setIsWalletInfoModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<WithdrawalRequest | null>(null);
+
+  const [requests, setRequests] = useState<WithdrawalRequest[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   
   const truncateAddress = (address: string) => {
     if (!address || address.length < 10) return address;
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
 
-  const filteredRequests = useMemo(() => {
-    if (filter === 'all') {
-      return requests;
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, dateRange]);
+
+  const fetchRequests = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      let statusParam = '';
+      if (filter !== 'all') {
+        const apiStatus = filter.charAt(0).toUpperCase() + filter.slice(1);
+        statusParam = `&status=${apiStatus}`;
+      }
+      
+      let dateParams = '';
+      if (dateRange.start) dateParams += `&startDate=${dateRange.start}`;
+      if (dateRange.end) dateParams += `&endDate=${dateRange.end}`;
+      
+      const endpoint = `/api/admin/withdrawals?page=${currentPage}&limit=${ITEMS_PER_PAGE}${statusParam}${dateParams}`;
+      const response: any = await api.get(endpoint);
+      
+      setRequests((response.results || []).map(processWithdrawalRequest));
+      setTotalPages(response.pages || 0);
+      if (currentPage > response.pages && response.pages > 0) {
+        setCurrentPage(response.pages);
+      }
+    } catch (error) {
+      console.error("Failed to fetch withdrawal requests:", error);
+      setRequests([]);
+      setTotalPages(0);
+    } finally {
+      setIsLoading(false);
     }
-    return requests.filter(req => req.status === filter);
-  }, [requests, filter]);
+  }, [currentPage, filter, dateRange]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDateRange(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const clearDates = () => {
+    setDateRange({ start: '', end: '' });
+  };
 
   const handleDeclineClick = (request: WithdrawalRequest) => {
     setSelectedRequest(request);
@@ -115,7 +162,6 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
     setIsWalletInfoModalOpen(true);
   };
 
-  // FIX: Made function async to await the status update.
   const handleDeclineSubmit = async ({ title, reason }: { title: string; reason: string }) => {
     if (!selectedRequest) return;
 
@@ -126,14 +172,15 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
     });
 
     await onUpdateRequestStatus(selectedRequest.id, 'declined', { reason });
+    fetchRequests();
 
     setIsDeclineModalOpen(false);
     setSelectedRequest(null);
   };
   
-  // FIX: Made function async to await the status update.
   const handleApproveClick = async (id: string) => {
     await onUpdateRequestStatus(id, 'approved');
+    fetchRequests();
   }
 
   const filterTabs: { label: string; value: FilterStatus }[] = [
@@ -148,22 +195,37 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
       <div className="space-y-8">
         <h1 className="text-3xl font-bold text-white">Withdrawal Requests</h1>
         <Card>
-          <div className="border-b border-gray-700 mb-4">
-              <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                  {filterTabs.map(tab => (
-                      <button
-                          key={tab.value}
-                          onClick={() => setFilter(tab.value)}
-                          className={`${
-                              filter === tab.value
-                              ? 'border-brand-orange text-brand-orange'
-                              : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                          } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
-                      >
-                          {tab.label}
-                      </button>
-                  ))}
-              </nav>
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="border-b border-gray-700">
+                <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                    {filterTabs.map(tab => (
+                        <button
+                            key={tab.value}
+                            onClick={() => setFilter(tab.value)}
+                            className={`${
+                                filter === tab.value
+                                ? 'border-brand-orange text-brand-orange'
+                                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                            } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+             <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="w-full sm:w-auto">
+                <label htmlFor="start" className="block text-sm font-medium text-gray-400 mb-1">Start Date</label>
+                <input type="date" name="start" value={dateRange.start} onChange={handleDateChange} className="w-full bg-brand-dark/50 border border-gray-700 rounded-lg p-2 text-white focus:ring-2 focus:ring-brand-orange" />
+              </div>
+              <div className="w-full sm:w-auto">
+                <label htmlFor="end" className="block text-sm font-medium text-gray-400 mb-1">End Date</label>
+                <input type="date" name="end" value={dateRange.end} onChange={handleDateChange} className="w-full bg-brand-dark/50 border border-gray-700 rounded-lg p-2 text-white focus:ring-2 focus:ring-brand-orange" />
+              </div>
+              <div className="w-full sm:w-auto self-end">
+                <Button onClick={clearDates} variant="secondary" className="w-full !py-2">Clear</Button>
+              </div>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -171,9 +233,11 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
               <thead>
                 <tr className="border-b border-gray-700">
                   <th className="p-4 text-sm font-semibold text-gray-400">Date</th>
+                  <th className="p-4 text-sm font-semibold text-gray-400">User ID</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">User Name</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">Wallet Balance</th>
-                  <th className="p-4 text-sm font-semibold text-gray-400">Amount</th>
+                  <th className="p-4 text-sm font-semibold text-gray-400">Request Amount</th>
+                  <th className="p-4 text-sm font-semibold text-gray-400">Received Amount</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">Wallet Name</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">Network</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">Wallet Address</th>
@@ -182,16 +246,25 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map((req) => {
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={11} className="text-center p-8 text-gray-500">Loading requests...</td>
+                  </tr>
+                ) : requests.length > 0 ? (
+                  requests.map((req) => {
                    const user = users.find(u => u.id === req.userId);
+                   const userName = req.userName || (user ? `${user.firstName} ${user.lastName}` : req.userEmail);
+                   const walletBalance = req.userWalletBalance !== undefined ? req.userWalletBalance : user?.walletBalance;
                    return(
                     <tr key={req.id} className="border-b border-gray-800 hover:bg-gray-800">
                       <td className="p-4 text-sm text-gray-300 whitespace-nowrap">{req.date}</td>
-                      <td className="p-4">{user ? `${user.firstName} ${user.lastName}` : req.userEmail}</td>
+                      <td className="p-4 font-mono text-xs">{req.userId}</td>
+                      <td className="p-4">{userName}</td>
                       <td className="p-4 font-semibold text-brand-orange">
-                        {user ? `$${user.walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
+                        {walletBalance !== undefined ? `$${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
                       </td>
                       <td className="p-4 font-semibold">${req.amount.toLocaleString()}</td>
+                      <td className="p-4 font-semibold text-green-400">${(req.receivedAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="p-4">{req.walletName}</td>
                       <td className="p-4 font-semibold">{req.network}</td>
                       <td 
@@ -201,7 +274,7 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
                       >
                          <div className="flex items-center gap-2">
                             <span className="truncate group-hover:text-brand-orange">{truncateAddress(req.walletAddress)}</span>
-                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                         </div>
                       </td>
                       <td className="p-4"><StatusBadge status={req.status} /></td>
@@ -217,10 +290,9 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
                       </td>
                     </tr>
                    );
-                })}
-                {filteredRequests.length === 0 && (
+                })) : (
                   <tr>
-                      <td colSpan={9} className="text-center p-8 text-gray-500">
+                      <td colSpan={11} className="text-center p-8 text-gray-500">
                           No {filter !== 'all' ? filter : ''} requests found.
                       </td>
                   </tr>
@@ -228,6 +300,28 @@ const WithdrawRequestsPage: React.FC<WithdrawRequestsPageProps> = ({ requests, u
               </tbody>
             </table>
           </div>
+
+          {totalPages > 0 && (
+            <div className="flex justify-between items-center mt-6">
+              <Button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1 || isLoading}
+                variant="secondary"
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-gray-400">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages || isLoading}
+                variant="secondary"
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
       <DeclineRequestModal

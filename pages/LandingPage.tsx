@@ -10,7 +10,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     <div className="min-h-screen flex flex-col items-center justify-center bg-brand-dark p-4">
       <div className="text-center">
         <h1 className="text-6xl font-bold text-white mb-4">
-          FIN2X
+          Flare Auto Earning
         </h1>
         <p className="text-xl text-gray-400 mb-8">
           Your Gateway to Network Earnings and Rewards.

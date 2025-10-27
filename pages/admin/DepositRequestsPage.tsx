@@ -171,6 +171,7 @@ const DepositRequestsPage: React.FC<DepositRequestsPageProps> = ({ users, onUpda
               <thead>
                 <tr className="border-b border-gray-700">
                   <th className="p-4 text-sm font-semibold text-gray-400">Date</th>
+                  <th className="p-4 text-sm font-semibold text-gray-400">User ID</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">User Name</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">Amount</th>
                   <th className="p-4 text-sm font-semibold text-gray-400">TID</th>
@@ -183,7 +184,7 @@ const DepositRequestsPage: React.FC<DepositRequestsPageProps> = ({ users, onUpda
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-gray-500">Loading requests...</td>
+                    <td colSpan={9} className="text-center p-8 text-gray-500">Loading requests...</td>
                   </tr>
                 ) : requests.length > 0 ? (
                   requests.map((req) => {
@@ -191,6 +192,7 @@ const DepositRequestsPage: React.FC<DepositRequestsPageProps> = ({ users, onUpda
                     return (
                       <tr key={req.id} className="border-b border-gray-800 hover:bg-gray-800">
                         <td className="p-4 text-sm text-gray-300 whitespace-nowrap">{req.date}</td>
+                        <td className="p-4 font-mono text-xs">{req.userId}</td>
                         <td className="p-4">{user ? `${user.firstName} ${user.lastName}` : req.userEmail}</td>
                         <td className="p-4 font-semibold">${req.amount.toLocaleString()}</td>
                         <td className="p-4 font-mono text-xs">{req.transactionId}</td>
@@ -220,7 +222,7 @@ const DepositRequestsPage: React.FC<DepositRequestsPageProps> = ({ users, onUpda
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-gray-500">
+                    <td colSpan={9} className="text-center p-8 text-gray-500">
                       No {filter !== 'all' ? filter : ''} requests found.
                     </td>
                   </tr>
